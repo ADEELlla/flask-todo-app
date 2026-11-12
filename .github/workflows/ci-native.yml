@@ -13,7 +13,7 @@ permissions:
 jobs:
   validate-and-smoke-test:
     name: Validate Flask application
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     env:
