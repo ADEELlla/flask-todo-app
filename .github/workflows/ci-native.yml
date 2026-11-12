@@ -1,0 +1,113 @@
+name: Flask CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-smoke-test:
+    name: Validate Flask application
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      FLASK_HOST: 127.0.0.1
+      FLASK_PORT: "7345"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Validate Python code
+        run: python -m compileall -q application manage.py
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Initialize SQLite database
+        run: |
+          rm -f todo.sqlite
+          python manage.py db upgrade
+          python - <<'PY'
+          import sqlite3
+
+          connection = sqlite3.connect("todo.sqlite")
+          tables = {
+              row[0]
+              for row in connection.execute(
+                  "SELECT name FROM sqlite_master WHERE type = 'table'"
+              )
+          }
+          connection.close()
+
+          expected = {"alembic_version", "todo"}
+          missing = expected - tables
+          if missing:
+              raise SystemExit(f"Missing SQLite tables: {sorted(missing)}")
+          print(f"SQLite database initialized with tables: {sorted(tables)}")
+          PY
+
+      - name: Smoke test Flask server
+        run: |
+          python manage.py runserver \
+            -h "$FLASK_HOST" \
+            -p "$FLASK_PORT" \
+            -R > flask-server.log 2>&1 &
+          server_pid=$!
+
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=false
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error \
+              "http://$FLASK_HOST:$FLASK_PORT/" \
+              --output response.html; then
+              ready=true
+              break
+            fi
+
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              echo "Flask server exited before becoming ready."
+              cat flask-server.log
+              exit 1
+            fi
+
+            echo "Waiting for Flask server (attempt $attempt/20)..."
+            sleep 1
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "Flask server did not answer within 20 seconds."
+            cat flask-server.log
+            exit 1
+          fi
+
+          grep --quiet "TODO Lists" response.html
+          echo "Smoke test passed: the Flask page returned HTTP 200."
+
+      - name: Show Flask log on failure
+        if: failure()
+        run: cat flask-server.log || true

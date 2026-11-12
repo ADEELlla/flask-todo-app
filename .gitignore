@@ -1,5 +1,12 @@
 .DS_Store
 .idea/*
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+.venv/
 *.py[cod]
 *pycache*
 *cache*
+*.log
+response.html

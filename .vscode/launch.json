@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flask: run locally",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\manage.py",
+      "args": [
+        "runserver",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "7345",
+        "-R"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
